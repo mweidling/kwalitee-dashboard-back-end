@@ -1,3 +1,8 @@
+"""Provide the CLI for OCR-D's Quiver tool.
+
+This modules provides the complete CLI of OCR-D Quiver by leveraging click.
+"""
+
 import json
 from pathlib import Path
 from sys import exit

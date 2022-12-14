@@ -3,15 +3,12 @@ benchmarking. It extracts the relevant information from the NextFlow processes. 
 
 import json
 import re
-import sys
 import xml.etree.ElementTree as ET
 from os import listdir, scandir
 from typing import Any, Dict, List, Union
 
 import yaml
-from .constants import *
-
-METS = '{http://www.loc.gov/METS/}'
+from .constants import METS, QUIVER_MAIN, RESULTS, OCRD
 
 def make_result_json(workspace_path: str, mets_path: str) -> Dict[str, Union[str, Dict]]:
     data_name = get_workspace_name(workspace_path)
@@ -23,9 +20,21 @@ def make_result_json(workspace_path: str, mets_path: str) -> Dict[str, Union[str
     }
 
 def get_workspace_name(workspace_path: str) -> str:
+    """
+    Retrieves the directory name of a workspace.
+
+    Args:
+        workspace_name (str): an absolute path to the workspace directory.
+
+    Returns:
+        str: the dirname of the workspace directory, e.g. `16_ant_simple_minimal_ocr`
+    """
     return workspace_path.split('/')[-1]
 
 def make_metadata(workspace_path: str, mets_path: str) -> Dict[str, Union[str, Dict]]:
+    """
+    Creates the `metadata` entry.
+    """
     return {
             'ocr_workflow': get_workflow(workspace_path, 'ocr'),
             'eval_workflow': get_workflow(workspace_path, 'eval'),
@@ -38,6 +47,17 @@ def make_metadata(workspace_path: str, mets_path: str) -> Dict[str, Union[str, D
         }
 
 def get_workflow(workspace_path: str, wf_type: str) -> Dict[str, str]:
+    """
+    Creates a `workflow` entry.
+    This function is used both for `ocr_workflow` and `eval_workflow`.
+
+    Args:
+        workspace_path (str): absolute path of the current workspace
+        wf_type (str): either `eval` or `ocr`
+
+    Returns:
+        Dict: A dictionary containing the JSON-LD @id of the workflow and a descriptive label.
+    """
     if wf_type == 'eval':
         pattern = r'eval.txt.nf'
     else:
@@ -58,6 +78,17 @@ def get_workflow(workspace_path: str, wf_type: str) -> Dict[str, str]:
     }
 
 def get_workspace(workspace_path: str, ws_type: str) -> Dict[str, str]:
+    """
+    Creates a `workspace` entry.
+    This function is used both for `ocr_workspace` and `eval_workspace`.
+
+    Args:
+        workspace_path (str): absolute path of the current workspace
+        wf_type (str): either `eval` or `ocr`
+
+    Returns:
+        Dict: A dictionary containing the JSON-LD @id of the workflow and a descriptive label.
+    """
     workspace = get_workspace_name(workspace_path)
     url = f'{QUIVER_MAIN}/workflows/results/{workspace}_{ws_type}.zip'
     if ws_type == 'ocr':
@@ -70,14 +101,30 @@ def get_workspace(workspace_path: str, ws_type: str) -> Dict[str, str]:
         'label': label
     }
 
-def get_element_from_mets(mets_path: str, xpath: str) -> List[str]:
+def get_node_from_mets(mets_path: str, xpath: str) -> List[str]:
+    """
+    Retrieves an node from a mets.xml according to a given XPath expression.
+
+    Args:
+        mets_path (str): the absolute path to a mets.xml
+        xpath (str): an XPath expression used for select a set of nodes
+    """
     with open(mets_path, 'r', encoding='utf-8') as f:
         tree = ET.parse(f)
         return tree.findall(xpath)
 
 def get_workflow_steps(mets_path: str) -> List[str]:
+    """
+    Retrieves the steps (i.e. a sequence of processors) of an OCR workflow.
+
+    Args:
+        mets_path (str): the absolute path to a mets.xml
+
+    Returns:
+        List[str]: a list containing all workflow steps
+    """
     xpath =f'.//{METS}agent[@ROLE="OTHER"]/{METS}name'
-    name_elements = get_element_from_mets(mets_path, xpath)
+    name_elements = get_node_from_mets(mets_path, xpath)
     formatted_names = []
     for e in name_elements:
         name = e.text.split(' ')[0]
@@ -87,26 +134,54 @@ def get_workflow_steps(mets_path: str) -> List[str]:
     return formatted_names
 
 def get_workflow_model(mets_path: str) -> str:
-    OCRD = '{https://ocr-d.de}'
+    """
+    Retrieves the OCR model used for text recognition.
+
+    Args:
+        mets_path (str): the absolute path to a mets.xml
+
+    Returns:
+        str: the OCR model used
+    """
     try:
         xpath = f'.//{METS}agent[@OTHERROLE="recognition/text-recognition"]/{METS}note[@{OCRD}option="parameter"]'
-        parameters = get_element_from_mets(mets_path, xpath)[0].text
+        parameters = get_node_from_mets(mets_path, xpath)[0].text
         params_json = json.loads(parameters)
         return params_json['checkpoint_dir']
     except:
         xpath = f'.//{METS}agent[@OTHERROLE="layout/segmentation/region"]/{METS}note[@{OCRD}option="parameter"]'
-        parameters = get_element_from_mets(mets_path, xpath)[-1].text
+        parameters = get_node_from_mets(mets_path, xpath)[-1].text
         params_json = json.loads(parameters)
         return params_json['model']
 
 
 def get_eval_tool(mets_path: str) -> str:
+    """
+    Retrieve the tool used for the OCR evaluation.
+
+    Args:
+        mets_path (str): the absolute path to a mets.xml
+
+    Returns:
+        str: the evaluation used
+    """
     xpath = f'.//{METS}agent[@OTHERROLE="recognition/text-recognition"]/{METS}name'
-    return get_element_from_mets(mets_path, xpath)[0].text
+    return get_node_from_mets(mets_path, xpath)[0].text
 
 def get_gt_workspace(workspace_path: str) -> Dict[str, str]:
+    """
+    Creates the `gt_workspace` entry.
+
+    Args:
+        workspace_path (str): absolute path of the current workspace
+
+    Returns:
+        Dict: A dictionary containing the JSON-LD @id of the GT workspace and a descriptive label.
+    """
     current_workspace = get_workspace_name(workspace_path)
     split_workspace_name = current_workspace.split('_')
+    century = split_workspace_name[0]
+    layout_info = split_workspace_name[2]
     font = ''
     if split_workspace_name[1] == 'ant':
         font = 'Antiqua'
@@ -115,7 +190,7 @@ def get_gt_workspace(workspace_path: str) -> Dict[str, str]:
     else:
         font = 'Font Mix'
     url = 'https://github.com/OCR-D/quiver-data/blob/main/' + current_workspace + '.ocrd.zip'
-    label = f'GT workspace {split_workspace_name[0]}th century {font} {split_workspace_name[2]} layout'
+    label = f'GT workspace {century}th century {font} {layout_info} layout'
     return {
         '@id': url,
         'label': label
@@ -155,6 +230,15 @@ def get_document_metadata(workspace_path: str) -> Dict[str, Dict[str, str]]:
     return result
 
 def get_no_of_pages(workspace_path: str) -> int:
+    """
+    Retrieves the number of pages given in a workspace.
+
+    Args:
+        workspace_path (str): absolute path of the current workspace
+
+    Returns:
+        int: the number of pages
+    """
     img_path = workspace_path + '/OCR-D-IMG'
     return len(listdir(img_path))
 
@@ -237,7 +321,7 @@ def get_page_id(json_file_path: str, mets_path: str) -> str:
     json_file_name = get_file_name_from_path(json_file_path)
     gt_file_name = json_file_name.replace('EVAL', 'GT')
     xpath = f'.//{METS}fptr[@FILEID="{gt_file_name}"]/..'
-    return get_element_from_mets(mets_path, xpath)[0].attrib['ID']
+    return get_node_from_mets(mets_path, xpath)[0].attrib['ID']
 
 
 def get_file_name_from_path(json_file_path: str) -> str:
